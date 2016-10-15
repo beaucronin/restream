@@ -1,0 +1,14 @@
+aws_access_key = ""
+aws_secret_key = ""
+account_id = ""
+
+keypair_name = ""
+
+# Specify the VPC to use here. If you're not using custom VPCs and custom subnets, then:
+#
+# 1. Set vpc_id to the id of the "Default" VPC from the VPC list: https://console.aws.amazon.com/vpc/home?region=us-east-1#vpcs:
+#    (e.g. vpc_id = "vpc-123456")
+# 2. Set subnet_ids list to the subnet ids (separated with commas) from the subnet list: https://console.aws.amazon.com/vpc/home?region=us-east-1#subnets:
+#    (e.g. ecs_cluster_subnet_ids = "subnet-123456,subnet-4dkd3414,subnet-344kk3k1")
+vpc_id = ""
+ecs_cluster_subnet_ids = ""
