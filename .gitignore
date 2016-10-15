@@ -1,3 +1,5 @@
 node_modules/
 keys.json
 infrastructure/terraform.tfvars
+*.tfstate
+*.tfstate.backup
