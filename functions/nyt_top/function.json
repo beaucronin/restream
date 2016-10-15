@@ -1,0 +1,4 @@
+{
+	"runtime": "python",
+	"handler": "main.lambda_function"
+}

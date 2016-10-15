@@ -1,0 +1,8 @@
+{
+  "name": "restreamables",
+  "description": "Lambda functions for converting REST APIs into streams",
+  "memory": 128,
+  "timeout": 5,
+  "role": "arn:aws:iam::811920840952:role/restreamables_lambda_function",
+  "environment": {}
+}
