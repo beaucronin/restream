@@ -12,7 +12,39 @@ I want a system that has the following properties:
 
 ## Subscribing to channels
 
-First, open a websocket connection to a restream server. For exap
+First, open a websocket connection to a restream server. For example, to connect to the public restream server:
+
+```javascript
+var ws = new WebSocket('ws://sockets.embeddingjs.org/channels')
+ws.onmessage = (m) => console.log(m)
+```
+
+Now subscribe to a channel:
+
+```javascript
+ws.send(JSON.stringify({ action: 'subscribe', channel: 'nyt-top' }))
+```
+
+A single client can subscribe to multiple channels, and unsubscribe as well. 
+
+Some channels take optional or required parameters. For example, to subscribe to the changes made to an individual tweet (such as favorite and retweet counts), use the following:
+
+```javascript
+let m = {
+	action: 'subscribe',
+	channel: 'twitter-status',
+	params: { id: '785164371995615232' }
+}
+ws.send(JSON.stringify(m))
+```
+
+Note that when params are sent, the param names and values should be considered part of the channel identifier. To unsubscribe to a particular channel, you need to send an unsubscribe message with the same `channel` and `param` settings.
+
+To stop all messages, you can send `{ action: 'unsubscribe_all' }`.
+
+### Message types
+
+TODO
 
 ## Architecture
 
@@ -38,7 +70,7 @@ First, open a websocket connection to a restream server. For exap
                      +-----------------------------------------------------------------------------------------+
 ```
 
-The architecture of Restream is driven by the design requirements outlined above. The main components are:
+The architecture of Restream is driven by the design requirements outlined in the introduction. The main components are:
 
 - A [pushpin](http://pushpin.org/) process (run from a [docker container](https://github.com/fanout/docker-pushpin) published at [fanout/pushpin](https://hub.docker.com/r/fanout/pushpin/)) to handle websocket connections, and to publish events on a given to the clients subscribed to that channel.
 - A backend process (run from a [docker container](https://github.com/beaucronin/restream/blob/master/backend/Dockerfile) published at [beaucronin/restream-backend](https://hub.docker.com/r/beaucronin/restream-backend/)) that manages subscriptions and tracks the state associated with each channel. This includes making sure that exactly one polling loop is enabled for each channel that currently has subscribers. This process is implemented as a [tornado web server](https://github.com/beaucronin/restream/blob/master/backend/web/app.py), and it uses
