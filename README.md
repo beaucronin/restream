@@ -16,6 +16,28 @@ First, open a websocket connection to a restream server. For exap
 
 ## Architecture
 
+```
+                     +-----------------------------------------------------------------------------------------+
+                     | AWS                                                                                     |
+                     |                                                                                         |
+                     |  +-----------------------------------------------------------+     +-----------------+  |    +------------+
+                     |  | ALB                                                       |     | Lambda          | <---> | REST       |
+                     |  |  +-----------------------+     +-----------------------+  | +-> | Fetcher 1       |  |    | Endpoint 1 |
+                     |  |  | ECS Instance          |     | ECS Instance          |  | |   +-----------------+  |    +------------+
++-------------+      |  |  |  +-----------------+  |     |  +-----------------+  |  | |                        |
+| Client      |      |  |  |  | Pushpin         |  |     |  | Backend         +-------+   +-----------------+  |    +------------+
+| (Browser)   |      |  |  |  |                 |  |     |  |                 |  |  |     | Lambda          | <---> | REST       |
+|             | <-----------> +-7999       5561-+ <-------> +-5000            +---------> | Fetcher 2       |  |    | Endpoint 2 |
+|             |      |  |  |  |                 |  |     |  |                 |  |  |     +-----------------+  |    +------------+
+|             |      |  |  |  |                 |  |     |  |                 +-------+                        |
+|             |      |  |  |  |                 |  |     |  |                 |  |  | |   +-----------------+  |    +------------+
++-------------+      |  |  |  +-----------------+  |     |  +-----------------+  |  | +-> | Lambda          | <---> | REST       |
+                     |  |  +-----------------------+     +-----------------------+  |     | Fetcher 3       |  |    | Endpoint 3 |
+                     |  +-----------------------------------------------------------+     +-----------------+  |    +------------+
+                     |                                                                                         |
+                     +-----------------------------------------------------------------------------------------+
+```
+
 The architecture of Restream is driven by the design requirements outlined above. The main components are:
 
 - A [pushpin](http://pushpin.org/) process (run from a [docker container](https://github.com/fanout/docker-pushpin) published at [fanout/pushpin](https://hub.docker.com/r/fanout/pushpin/)) to handle websocket connections, and to publish events on a given to the clients subscribed to that channel.
