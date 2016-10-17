@@ -1,3 +1,5 @@
+import sys
+sys.path.append('./site-packages')
 from twython import Twython
 
 def lambda_function(event, context):

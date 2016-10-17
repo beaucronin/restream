@@ -1,3 +1,5 @@
+import sys
+sys.path.append('./site-packages')
 import requests
 
 BASE_URL = "https://api.nytimes.com/svc/topstories/v2/{}.json?api-key={}"
@@ -14,7 +16,7 @@ def lambda_function(event, context):
 			'poll_interval': 100 # 1000 calls per day rate limit
 		}
 	elif event['call'] == 'fetch':
-		resp = requests.get(BASE_URL.format(event.get('section', 'home'), event['keys']['api-key']))
+		resp = requests.get(BASE_URL.format(event.get('params', {}).get('section', 'home'), event['keys']['api-key']))
 		if resp.status_code == 200:
 			return {
 				'status_code': 200,
