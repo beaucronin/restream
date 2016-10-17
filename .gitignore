@@ -1,4 +1,5 @@
 node_modules/
+site-packages/
 keys.json
 infrastructure/terraform.tfvars
 *.tfstate
