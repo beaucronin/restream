@@ -73,3 +73,11 @@ variable "message_cache_table" {
   description = "The DynamoDB table that contains previous messages for each stream"
   default = "RestreamMessageCache"
 }
+
+variable "keys_bucket" {
+  description = "The S3 bucket where the API keys file is stored"
+}
+
+variable "keys_object" {
+  description = "The S3 object key where the API keys file is stored"
+}

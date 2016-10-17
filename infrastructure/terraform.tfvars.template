@@ -12,3 +12,6 @@ keypair_name = ""
 #    (e.g. ecs_cluster_subnet_ids = "subnet-123456,subnet-4dkd3414,subnet-344kk3k1")
 vpc_id = ""
 ecs_cluster_subnet_ids = ""
+
+keys_bucket = ""
+keys_object = ""

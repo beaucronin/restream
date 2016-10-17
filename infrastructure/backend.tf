@@ -17,9 +17,14 @@ resource "aws_ecs_task_definition" "backend" {
       }
     ],
     "environment": [
-      { "name": "AWS_ACCESS_KEY_ID", "value": "${var.aws_access_key}"},
-      { "name": "AWS_SECRET_ACCESS_KEY", "value": "${var.aws_secret_key}"},
-      { "name": "AWS_DEFAULT_REGION", "value": "${var.region}"}
+      { "name": "AWS_ACCESS_KEY_ID", "value": "${var.aws_access_key}" },
+      { "name": "AWS_SECRET_ACCESS_KEY", "value": "${var.aws_secret_key}" },
+      { "name": "AWS_DEFAULT_REGION", "value": "${var.region}" },
+      { "name": "PUSHPIN_HOSTNAME", "value": "${aws_alb.main.dns_name}" },
+      { "name": "PUSHPIN_PORT", "value": "${var.backend_port}" },
+      { "name": "KEYS_BUCKET", "value": "${var.keys_bucket}" },
+      { "name": "KEYS_OBJECT", "value": "${var.keys_object}" },
+      { "name": "MESSAGE_CACHE_TABLE", "value": "${var.message_cache_table}" }
     ]
   }
 ]
