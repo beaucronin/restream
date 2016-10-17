@@ -118,11 +118,29 @@ def parse_message(msg):
     Parse a serialized control message from a client, and return a valid command
     object that includes a channel_id with the params encoded.
     """
-    obj = json.loads(msg)
-    obj['params'] = obj.get('params', {})
-    obj['params_encoding'] = serialize_params(obj.get('params', {}))
-    obj['channel_id'] = obj['channel'] + '_' + obj['params_encoding']
-    return obj
+    try: 
+        obj = json.loads(msg)
+        if 'action' not in obj:
+            return {
+                '__restream_type': 'error',
+                'message': 'No action found in control message'
+            }
+        elif obj['action'].lower() not in ['subscribe', 'unsubscribe', 'unsubscribe-all']:
+            return {
+                '__restream_type': 'error',
+                'message': 'Action {} not recognized'.format(obj['action'])
+            }
+        obj['__restream_type'] = 'action'
+        obj['params'] = obj.get('params', {})
+        obj['params_encoding'] = serialize_params(obj.get('params', {}))
+        obj['channel_id'] = obj['channel'] + '_' + obj['params_encoding']
+        return obj
+    except (TypeError, ValueError,KeyError) as e:
+        logger.info('Badly formed control message: '+str(msg))
+        return {
+            '__restream_type': 'error',
+            'message': 'Badly formed control message: {}'.format(e.message)
+        }
 
 
 def serialize_params(params):
@@ -245,16 +263,22 @@ class MainHandler(tornado.web.RequestHandler):
 
         logger.debug(in_events[0].type)
         if in_events[0].type == 'OPEN':
-            out_events.append(WebSocketEvent('OPEN'))        
+            out_events.append(WebSocketEvent('OPEN'))
+            out_events.append(WebSocketEvent('TEXT', 'm:' +
+                json.dumps({'__restream_type': 'ready'})))
         elif in_events[0].type == 'TEXT':
             msg = in_events[0].content
             logger.debug(msg)
             command = parse_message(msg)
-            if command['action'] == 'subscribe':
+            if command['__restream_type'] == 'error':
+                out_events.append(WebSocketEvent('TEXT', 'm:' + json.dumps(command)))
+            elif command['action'] == 'subscribe':
                 if connection_id in connection_channels and command['channel_id'] in connection_channels[connection_id]:
                     logger.info("Connection {} already subscribed to {}".format(
                         connection_id, command['channel_id']))
                 else:
+                    out_events.append(WebSocketEvent('TEXT', 'm:' +
+                        json.dumps({'__restream_type': 'subscribe', 'channel': command['channel']})))
                     out_events.append(WebSocketEvent('TEXT', 'c:' +
                         websocket_control_message('subscribe', {'channel': command['channel_id']})))
                     process_subscribe(command, self.channel_fetchers, connection_id)
@@ -264,6 +288,8 @@ class MainHandler(tornado.web.RequestHandler):
                     logger.info("Connection {} not subscribed to {}; won't unsubscribe".format(
                         connection_id, command['channel_id']))
                 else:
+                    out_events.append(WebSocketEvent('TEXT', 'm:' +
+                        json.dumps({'__restream_type': 'unsubscribe', 'channel': command['channel']})))
                     out_events.append(WebSocketEvent('TEXT', 'c:' +
                         websocket_control_message('unsubscribe', {'channel': command['channel_id']})))
                     process_unsubscribe(command['channel_id'], connection_id)
