@@ -2,17 +2,18 @@ import threading, time
 import logging
 import json
 import datetime
+import os
 from base64 import b64encode
+
 from deepdiff import DeepDiff
 
-import tornado.httpserver, tornado.ioloop, tornado.web
+import tornado.ioloop, tornado.web
 
 from pubcontrol import Item
 
 from gripcontrol import decode_websocket_events, GripPubControl
 from gripcontrol import encode_websocket_events, WebSocketEvent
-from gripcontrol import websocket_control_message, validate_sig
-from gripcontrol import WebSocketMessageFormat
+from gripcontrol import websocket_control_message, WebSocketMessageFormat
 
 import boto3
 
@@ -25,16 +26,16 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # NOTE: localhost will not work as hostname, even in dev
-# FIXME load constants from config
-HOSTNAME = '192.168.7.34'
-DELAY = 5000
+PUSHPIN_HOSTNAME = os.getenv('PUSHPIN_HOSTNAME')
+PUSHPIN_PORT = os.getenv('PUSHPIN_PORT', '5561')
 RESTREAM_LAMBDA_PREFIX = 'restreamable'
-KEYS_BUCKET = 'restream-data'
-KEYS_OBJECT = 'keys.json'
-ITEM_TABLE = 'RestreamMessageCache'
+KEYS_BUCKET = os.getenv('KEYS_BUCKET','restream-data')
+KEYS_OBJECT = os.getenv('KEYS_OBJECT','keys.json')
+ITEM_TABLE = os.getenv('MESSAGE_CACHE_TABLE', 'RestreamMessageCache')
+CONNECTION_TTL = int(os.getenv('CONNECTION_TTL', 1800)) # 30 minute default TTL on each connection
 
 pub = GripPubControl({
-    'control_uri': 'http://{}:5561'.format(HOSTNAME)
+    'control_uri': 'http://{}:{}'.format(PUSHPIN_HOSTNAME, PUSHPIN_PORT)
 })
 
 channel_counts = {}
@@ -42,6 +43,7 @@ channel_processors = {}
 global channel_keys
 channel_keys = {}
 connection_channels = {}
+connection_lastseen = {}
 
 FETCH_UPDATE_TIMEOUT = 600 # seconds
 
@@ -97,12 +99,13 @@ def process_subscribe(command, channel_fetchers, connection_id):
             logger.warn('no fetcher found for channel {}'.format(channel))
 
 
-def process_unsubscribe(channel_id):
+def process_unsubscribe(channel_id, connection_id):
     """
     Remove a subscription for the given channel: update its refcount, and stop the
     fetch periodic callback if the refcount is now 0
     """
     decrement_channel_count(channel_id)
+    connection_channels[connection_id].remove(channel_id)
     if not is_channel_active(channel_id):
         if channel_id in channel_processors:
             pcb = channel_processors[channel_id]
@@ -158,7 +161,7 @@ def fetch_channel(channel, params, channel_id, fetcher_meta):
                 'call': 'fetch',
                 'channel': channel,
                 'params': params,
-                'keys': channel_keys[channel]
+                'keys': channel_keys.get(channel, {})
             }).encode('utf-8'))
     resp = json.loads(ret['Payload'].read())
 
@@ -172,7 +175,7 @@ def fetch_channel(channel, params, channel_id, fetcher_meta):
     out_items = []
     for item in resp['result']:
         data = json.dumps(item)
-        # logger.info(item)
+        logger.info(item)
         if id_field not in item:
             logger.info('Item does not contain id field {} - skipping'.format(id_field))
             continue
@@ -195,7 +198,7 @@ def fetch_channel(channel, params, channel_id, fetcher_meta):
                 logger.debug('item {} is unchanged'.format(item[id_field]))
             else:
                 logger.debug('item {} is updated'.format(item[id_field]))
-                logger.debug(json.dumps(ddiff, indent=2))
+                # logger.debug(json.dumps(ddiff, indent=2))
                 item['__restream_type'] = 'updated_item'
                 item['__restream_diff'] = ddiff
                 out_items.append(Item(WebSocketMessageFormat(json.dumps(item))))
@@ -210,6 +213,20 @@ def fetch_channel(channel, params, channel_id, fetcher_meta):
         pub.publish(channel_id, item)
 
 
+def check_connections():
+    now = datetime.datetime.now()
+    conns = list(connection_lastseen.keys())
+    for conn in conns:
+        if (now - conns[conn]).seconds > CONNECTION_TTL and conn in connection_channels:
+            disconnect_all(conn)
+
+
+def disconnect_all(connection_id):
+    for channel_id in connection_channels[connection_id]:
+        logger.info('disconnect {} from {}'.format(connection_id, channel_id))
+        process_unsubscribe(channel_id, connection_id)
+
+
 class MainHandler(tornado.web.RequestHandler):
     def initialize(self):
         self.fetch_timestamp = None
@@ -218,12 +235,15 @@ class MainHandler(tornado.web.RequestHandler):
         self.load_fetchers()
 
     def post(self):
+#####################################
+        # FIXME add connection last seen timestamp
         connection_id = self.request.headers['Connection-Id']
         in_events = decode_websocket_events(self.request.body)
         out_events = []
         if len(in_events) == 0:
             return
 
+        logger.debug(in_events[0].type)
         if in_events[0].type == 'OPEN':
             out_events.append(WebSocketEvent('OPEN'))        
         elif in_events[0].type == 'TEXT':
@@ -231,21 +251,27 @@ class MainHandler(tornado.web.RequestHandler):
             logger.debug(msg)
             command = parse_message(msg)
             if command['action'] == 'subscribe':
-                out_events.append(WebSocketEvent('TEXT', 'c:' +
-                    websocket_control_message('subscribe', {'channel': command['channel_id']})))
-                logger.info('subscribe {} to {}'.format(connection_id, command['channel_id']))
-                process_subscribe(command, self.channel_fetchers, connection_id)
+                if connection_id in connection_channels and command['channel_id'] in connection_channels[connection_id]:
+                    logger.info("Connection {} already subscribed to {}".format(
+                        connection_id, command['channel_id']))
+                else:
+                    out_events.append(WebSocketEvent('TEXT', 'c:' +
+                        websocket_control_message('subscribe', {'channel': command['channel_id']})))
+                    process_subscribe(command, self.channel_fetchers, connection_id)
+                    logger.info('subscribe {} to {}'.format(connection_id, command['channel_id']))
             elif command['action'] == 'unsubscribe':
-                out_events.append(WebSocketEvent('TEXT', 'c:' +
-                    websocket_control_message('unsubscribe', {'channel': command['channel_id']})))
-                logger.info('unsubscribe {} from {}'.format(connection_id, command['channel_id']))
-                process_unsubscribe(command['channel_id'])
-        elif in_events[0].type == 'DISCONNECT':
-            out_events.append(WebSocketEvent('DISCONNECT'))
+                if connection_id not in connection_channels or command['channel_id'] not in connection_channels[connection_id]:
+                    logger.info("Connection {} not subscribed to {}; won't unsubscribe".format(
+                        connection_id, command['channel_id']))
+                else:
+                    out_events.append(WebSocketEvent('TEXT', 'c:' +
+                        websocket_control_message('unsubscribe', {'channel': command['channel_id']})))
+                    process_unsubscribe(command['channel_id'], connection_id)
+                    logger.info('unsubscribe {} from {}'.format(connection_id, command['channel_id']))
+        elif in_events[0].type == 'DISCONNECT' or in_events[0].type == 'CLOSE':
+            out_events.append(WebSocketEvent(in_events[0].type))
             if connection_id in connection_channels:
-                for channel_id in connection_channels[connection_id]:
-                    logger.info('disconnect {} from {}'.format(connection_id, channel_id))
-                    process_unsubscribe(channel_id)
+                disconnect_all(connection_id)
         else:
             logger.info('event type not recognized: '+in_events[0].type)
 
