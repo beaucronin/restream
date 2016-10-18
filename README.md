@@ -12,20 +12,28 @@ I want a system that has the following properties:
 
 ## Subscribing to channels
 
-First, open a websocket connection to a restream server. For example, to connect to the public restream server:
+The fastest way to try Restream is to access the public server from the command line, for example using [wscat](https://www.npmjs.com/package/wscat):
+
+```
+$ wscat -c ws://sockets.embeddingjs.org/channels
+connected (press CTRL+C to quit)
+> { "action": "subscribe", "channel": "twitter-status", "params": {"id": "785164371995615232"}}
+```
+
+Programmatic access is also very easy from any platform that supports websockets. First, open a websocket connection to a restream server:
 
 ```javascript
 var ws = new WebSocket('ws://sockets.embeddingjs.org/channels')
 ws.onmessage = (m) => console.log(m)
 ```
 
-Now subscribe to a channel:
+Then subscribe to a channel:
 
 ```javascript
 ws.send(JSON.stringify({ action: 'subscribe', channel: 'nyt-top' }))
 ```
 
-A single client can subscribe to multiple channels, and unsubscribe as well. 
+A single client can subscribe to multiple channels, and `unsubscribe` as well. 
 
 Some channels take optional or required parameters. For example, to subscribe to the changes made to an individual tweet (such as favorite and retweet counts), use the following:
 
